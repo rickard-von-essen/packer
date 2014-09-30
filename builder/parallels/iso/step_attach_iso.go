@@ -2,10 +2,11 @@ package iso
 
 import (
 	"fmt"
+	"log"
+
 	"github.com/mitchellh/multistep"
 	parallelscommon "github.com/mitchellh/packer/builder/parallels/common"
 	"github.com/mitchellh/packer/packer"
-	"log"
 )
 
 // This step attaches the ISO to the virtual machine.
@@ -38,8 +39,36 @@ func (s *stepAttachISO) Run(state multistep.StateBag) multistep.StepAction {
 		return multistep.ActionHalt
 	}
 
-	ui.Say("Setting the boot order...")
+	ui.Say("Changing the default cdrom position...")
 	command := []string{
+		"set", vmName,
+		"--device-set", "cdrom0",
+		"--position", "2",
+	}
+
+	if err := driver.Prlctl(command...); err != nil {
+		err := fmt.Errorf("Error setting the position: %s", err)
+		state.Put("error", err)
+		ui.Error(err.Error())
+		return multistep.ActionHalt
+	}
+
+	ui.Say("Setting the cdrom position...")
+	command = []string{
+		"set", vmName,
+		"--device-set", cdrom,
+		"--position", "1",
+	}
+
+	if err := driver.Prlctl(command...); err != nil {
+		err := fmt.Errorf("Error setting the position: %s", err)
+		state.Put("error", err)
+		ui.Error(err.Error())
+		return multistep.ActionHalt
+	}
+
+	ui.Say("Setting the boot order...")
+	command = []string{
 		"set", vmName,
 		"--device-bootorder", fmt.Sprintf("hdd0 %s cdrom0 net0", cdrom),
 	}

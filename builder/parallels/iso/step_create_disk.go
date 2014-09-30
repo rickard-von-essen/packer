@@ -2,10 +2,11 @@ package iso
 
 import (
 	"fmt"
+	"strconv"
+
 	"github.com/mitchellh/multistep"
 	parallelscommon "github.com/mitchellh/packer/builder/parallels/common"
 	"github.com/mitchellh/packer/packer"
-	"strconv"
 )
 
 // This step creates the virtual disk that will be used as the
@@ -23,6 +24,7 @@ func (s *stepCreateDisk) Run(state multistep.StateBag) multistep.StepAction {
 		"--device-set", "hdd0",
 		"--size", strconv.FormatUint(uint64(config.DiskSize), 10),
 		"--iface", config.HardDriveInterface,
+		"--position", "0",
 	}
 
 	ui.Say("Creating hard drive...")
