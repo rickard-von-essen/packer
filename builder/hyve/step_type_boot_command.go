@@ -2,20 +2,23 @@ package hyve
 
 import (
 	"fmt"
+	"io"
 	"log"
 	// "net"
 	"strings"
 	"time"
-	"unicode"
+	_ "unicode"
 	"unicode/utf8"
 
-	"github.com/mitchellh/go-vnc"
+	// "github.com/mitchellh/go-vnc"
 	"github.com/mitchellh/multistep"
 	"github.com/mitchellh/packer/packer"
-	// "github.com/mitchellh/packer/template/interpolate"
+	"github.com/mitchellh/packer/template/interpolate"
+
+	"github.com/huin/goserial"
 )
 
-const KeyLeftShift uint32 = 0xFFE1
+//const KeyLeftShift uint32 = 0xFFE1
 
 type bootCommandTemplateData struct {
 	HTTPIP   string
@@ -32,107 +35,99 @@ type bootCommandTemplateData struct {
 //
 // Produces:
 //   <nothing>
-type stepTypeBootCommand struct{}
+type stepTypeBootCommand struct {
+	com1 io.ReadWriter
+}
 
 func (s *stepTypeBootCommand) Run(state multistep.StateBag) multistep.StepAction {
-	//	config := state.Get("config").(*Config)
-	//	httpPort := state.Get("http_port").(uint)
+	config := state.Get("config").(*Config)
+	// TODO get http_ip!!
+	httpPort := state.Get("http_port").(uint)
 	driver := state.Get("driver").(Driver)
 	ui := state.Get("ui").(packer.Ui)
 
-	// Connect to COM1
-
 	tty := driver.TTY()
 	ui.Say(fmt.Sprintf("Connecting to VM via serial port (COM1): %s", tty))
-	/*	nc, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", vncPort))
+
+	ctx := config.ctx
+	ctx.Data = &bootCommandTemplateData{
+		// TODO get http_ip!!
+		"10.0.2.2",
+		httpPort,
+		config.VMName,
+	}
+
+	comSettings := &goserial.Config{Name: tty, Baud: 9600}
+	com1, err := goserial.OpenPort(comSettings)
+	if err != nil {
+		err := fmt.Errorf("Error connecting to %s: %s", tty, err)
+		state.Put("error", err)
+		ui.Error(err.Error())
+		return multistep.ActionHalt
+	}
+	s.com1 = com1
+
+	ui.Say("Typing the boot command over serial...")
+	for _, command := range config.BootCommand {
+		command, err := interpolate.Render(command, &ctx)
 		if err != nil {
-			err := fmt.Errorf("Error connecting to VNC: %s", err)
+			err := fmt.Errorf("Error preparing boot command: %s", err)
 			state.Put("error", err)
 			ui.Error(err.Error())
 			return multistep.ActionHalt
 		}
-		defer nc.Close()
 
-		c, err := vnc.Client(nc, &vnc.ClientConfig{Exclusive: false})
-		if err != nil {
-			err := fmt.Errorf("Error handshaking with VNC: %s", err)
-			state.Put("error", err)
-			ui.Error(err.Error())
+		// Check for interrupts between typing things so we can cancel
+		// since this isn't the fastest thing.
+		if _, ok := state.GetOk(multistep.StateCancelled); ok {
 			return multistep.ActionHalt
 		}
-		defer c.Close()
 
-		log.Printf("Connected to VNC desktop: %s", c.DesktopName)
-
-		ctx := config.ctx
-		ctx.Data = &bootCommandTemplateData{
-			"10.0.2.2",
-			httpPort,
-			config.VMName,
-		}
-
-		ui.Say("Typing the boot command over VNC...")
-		for _, command := range config.BootCommand {
-			command, err := interpolate.Render(command, &ctx)
-			if err != nil {
-				err := fmt.Errorf("Error preparing boot command: %s", err)
-				state.Put("error", err)
-				ui.Error(err.Error())
-				return multistep.ActionHalt
-			}
-
-			// Check for interrupts between typing things so we can cancel
-			// since this isn't the fastest thing.
-			if _, ok := state.GetOk(multistep.StateCancelled); ok {
-				return multistep.ActionHalt
-			}
-
-			vncSendString(c, command)
-		}
-	*/
+		ttySendString(com1, command)
+	}
 	return multistep.ActionContinue
 }
 
 func (*stepTypeBootCommand) Cleanup(multistep.StateBag) {}
 
-func vncSendString(c *vnc.ClientConn, original string) {
+func ttySendString(com1 io.ReadWriter, original string) {
 	// Scancodes reference: https://github.com/qemu/qemu/blob/master/ui/vnc_keysym.h
-	special := make(map[string]uint32)
-	special["<bs>"] = 0xFF08
-	special["<del>"] = 0xFFFF
-	special["<enter>"] = 0xFF0D
-	special["<esc>"] = 0xFF1B
-	special["<f1>"] = 0xFFBE
-	special["<f2>"] = 0xFFBF
-	special["<f3>"] = 0xFFC0
-	special["<f4>"] = 0xFFC1
-	special["<f5>"] = 0xFFC2
-	special["<f6>"] = 0xFFC3
-	special["<f7>"] = 0xFFC4
-	special["<f8>"] = 0xFFC5
-	special["<f9>"] = 0xFFC6
-	special["<f10>"] = 0xFFC7
-	special["<f11>"] = 0xFFC8
-	special["<f12>"] = 0xFFC9
-	special["<return>"] = 0xFF0D
-	special["<tab>"] = 0xFF09
-	special["<up>"] = 0xFF52
-	special["<down>"] = 0xFF54
-	special["<left>"] = 0xFF51
-	special["<right>"] = 0xFF53
-	special["<spacebar>"] = 0x020
-	special["<insert>"] = 0xFF63
-	special["<home>"] = 0xFF50
-	special["<end>"] = 0xFF57
-	special["<pageUp>"] = 0xFF55
-	special["<pageDown>"] = 0xFF56
+	// special := make(map[string]uint32)
+	// special["<bs>"] = 0xFF08
+	// special["<del>"] = 0xFFFF
+	// special["<enter>"] = 0xFF0D
+	// special["<esc>"] = 0xFF1B
+	// special["<f1>"] = 0xFFBE
+	// special["<f2>"] = 0xFFBF
+	// special["<f3>"] = 0xFFC0
+	// special["<f4>"] = 0xFFC1
+	// special["<f5>"] = 0xFFC2
+	// special["<f6>"] = 0xFFC3
+	// special["<f7>"] = 0xFFC4
+	// special["<f8>"] = 0xFFC5
+	// special["<f9>"] = 0xFFC6
+	// special["<f10>"] = 0xFFC7
+	// special["<f11>"] = 0xFFC8
+	// special["<f12>"] = 0xFFC9
+	// special["<return>"] = 0xFF0D
+	// special["<tab>"] = 0xFF09
+	// special["<up>"] = 0xFF52
+	// special["<down>"] = 0xFF54
+	// special["<left>"] = 0xFF51
+	// special["<right>"] = 0xFF53
+	// special["<spacebar>"] = 0x020
+	// special["<insert>"] = 0xFF63
+	// special["<home>"] = 0xFF50
+	// special["<end>"] = 0xFF57
+	// special["<pageUp>"] = 0xFF55
+	// special["<pageDown>"] = 0xFF56
 
-	shiftedChars := "~!@#$%^&*()_+{}|:\"<>?"
+	// shiftedChars := "~!@#$%^&*()_+{}|:\"<>?"
 
 	// TODO(mitchellh): Ripe for optimizations of some point, perhaps.
 	for len(original) > 0 {
-		var keyCode uint32
-		keyShift := false
+		var key byte
+		//keyShift := false
 
 		if strings.HasPrefix(original, "<wait>") {
 			log.Printf("Special code '<wait>' found, sleeping one second")
@@ -155,38 +150,65 @@ func vncSendString(c *vnc.ClientConn, original string) {
 			continue
 		}
 
-		for specialCode, specialValue := range special {
-			if strings.HasPrefix(original, specialCode) {
-				log.Printf("Special code '%s' found, replacing with: %d", specialCode, specialValue)
-				keyCode = specialValue
-				original = original[len(specialCode):]
-				break
-			}
-		}
+		// for specialCode, specialValue := range special {
+		// 	if strings.HasPrefix(original, specialCode) {
+		// 		log.Printf("Special code '%s' found, replacing with: %d", specialCode, specialValue)
+		// 		keyCode = specialValue
+		// 		original = original[len(specialCode):]
+		// 		break
+		// 	}
+		// }
 
-		if keyCode == 0 {
+		if key == 0 {
 			r, size := utf8.DecodeRuneInString(original)
 			original = original[size:]
-			keyCode = uint32(r)
-			keyShift = unicode.IsUpper(r) || strings.ContainsRune(shiftedChars, r)
+			key = byte(r)
+			//keyShift = unicode.IsUpper(r) || strings.ContainsRune(shiftedChars, r)
 
-			log.Printf("Sending char '%c', code %d, shift %v", r, keyCode, keyShift)
+			log.Printf("Sending char '%c', code %d", r, key)
 		}
 
-		if keyShift {
-			c.KeyEvent(KeyLeftShift, true)
-		}
+		//if keyShift {
+		//	c.KeyEvent(KeyLeftShift, true)
+		//}
 
-		c.KeyEvent(keyCode, true)
-		time.Sleep(time.Second / 10)
-		c.KeyEvent(keyCode, false)
-		time.Sleep(time.Second / 10)
+		//c.KeyEvent(keyCode, true)
+		ttySendKey(com1, key)
+		//time.Sleep(time.Second / 10)
+		//c.KeyEvent(keyCode, false)
+		//time.Sleep(time.Second / 10)
+		// TODO
 
-		if keyShift {
-			c.KeyEvent(KeyLeftShift, false)
-		}
+		// if keyShift {
+		// 	c.KeyEvent(KeyLeftShift, false)
+		// }
 
 		// qemu is picky, so no matter what, wait a small period
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+func ttySendKey(com1 io.ReadWriter, key byte) error {
+
+	// buf := new(bytes.Buffer)
+	// err := binary.Write(buf, binary.LittleEndian, keyCode)
+	// if err != nil {
+	// 	fmt.Println("binary.Write failed:", err)
+	// }
+
+	// fmt.Printf("Encoded: % x\n", buf.Bytes())
+	_, err := com1.Write([]byte{key})
+	return err
+
+	//for i := 0; i < 50; i++ {
+	//	time.Sleep(100 * time.Millisecond)
+	//	buf := make([]byte, 1024)
+	//	_, err := s.Read(buf)
+	//	if err != nil {
+	//		fmt.Println(err)
+	//	}
+
+	//	fmt.Printf("%s", string(buf))
+	//}
+
 }

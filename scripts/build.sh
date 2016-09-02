@@ -34,7 +34,7 @@ mkdir -p bin/
 # Build!
 echo "==> Building..."
 set +e
-gox \
+gox -cgo \
     -os="${XC_OS}" \
     -arch="${XC_ARCH}" \
     -ldflags "-X github.com/mitchellh/packer/version.GitCommit=${GIT_COMMIT}${GIT_DIRTY}" \
