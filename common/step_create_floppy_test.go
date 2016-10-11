@@ -2,17 +2,17 @@ package common
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/mitchellh/multistep"
 	"github.com/mitchellh/packer/packer"
 	"io/ioutil"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
 	"strconv"
-	"testing"
-	"log"
 	"strings"
-	"fmt"
+	"testing"
 )
 
 const TestFixtures = "test-fixtures"
@@ -156,6 +156,64 @@ func xxxTestStepCreateFloppy_missing(t *testing.T) {
 	}
 }
 
+// See [GH-3377]
+func TestStepCreateFloppy_hiarchy(t *testing.T) {
+	floppy_files := []string{
+		"test-fixtures/floppies/issue-3377/answer_files/vmw/7/Autounattend.xml",
+		"test-fixtures/floppies/issue-3377/scripts/bootstrap-win.ps1",
+		"test-fixtures/floppies/issue-3377/FILES/pvscsi",
+		"test-fixtures/floppies/issue-3377/FILES/vmxnet3",
+	}
+
+	state := testStepCreateFloppyState(t)
+	step := new(StepCreateFloppy)
+
+	step.Files = floppy_files
+	if action := step.Run(state); action != multistep.ActionContinue {
+		t.Fatalf("bad action: %#v for %v", action, step.Files)
+	}
+
+	if _, ok := state.GetOk("error"); ok {
+		t.Fatalf("state should be ok for %v", step.Files)
+	}
+
+	floppy_path := state.Get("floppy_path").(string)
+
+	if _, err := os.Stat(floppy_path); err != nil {
+		t.Fatalf("file not found: %s for %v", floppy_path, step.Files)
+	}
+
+	expected := map[string]bool{
+		"test-fixtures/floppies/issue-3377/answer_files/vmw/7/Autounattend.xml": true,
+		"test-fixtures/floppies/issue-3377/scripts/bootstrap-win.ps1":           true,
+		"test-fixtures/floppies/issue-3377/FILES/pvscsi/pvscsiver.dll":          true,
+		"test-fixtures/floppies/issue-3377/FILES/vmxnet3/vmxnet3n61x86.sys":     true,
+		"test-fixtures/floppies/issue-3377/FILES/vmxnet3/vmxnet3ndis6.cat":      true,
+		"test-fixtures/floppies/issue-3377/FILES/vmxnet3/vmxnet3ndis6ver.dll":   true,
+		"test-fixtures/floppies/issue-3377/FILES/pvscsi/pvscsi.cat":             true,
+		"test-fixtures/floppies/issue-3377/FILES/pvscsi/pvscsi.inf":             true,
+		"test-fixtures/floppies/issue-3377/FILES/pvscsi/pvscsi.sys":             true,
+		"test-fixtures/floppies/issue-3377/FILES/vmxnet3/vmxnet3n61x64.sys":     true,
+		"test-fixtures/floppies/issue-3377/FILES/vmxnet3/vmxnet3ndis6.inf":      true,
+	}
+	for ex := range expected {
+		if _, ok := step.FilesAdded[ex]; !ok {
+			t.Fatalf("File missing - \"%s\" from: %v", ex, step.FilesAdded)
+		}
+	}
+
+	if len(expected) < len(step.FilesAdded) {
+		t.Fatal("To many files added!")
+	}
+
+	fc, _ := ioutil.ReadFile(step.floppyPath)
+	t.Fatalf("Got: %s, %s", step.floppyPath, string(fc))
+}
+
+func TestAdd(t *testing.T) {
+	// TODO
+}
+
 func xxxTestStepCreateFloppy_notfound(t *testing.T) {
 	state := testStepCreateFloppyState(t)
 	step := new(StepCreateFloppy)
@@ -219,28 +277,28 @@ func TestStepCreateFloppyDirectories(t *testing.T) {
 	var basePath = filepath.Join(".", TestFixtures, TestName)
 
 	type contentsTest struct {
-		dirs []string
+		dirs   []string
 		result []string
 	}
 
 	// keep in mind that .FilesAdded doesn't keep track of the target filename or directories, but rather the source filename.
 	directories := [][]contentsTest{
 		[]contentsTest{
-			contentsTest{dirs:[]string{"file1","file2","file3"},result:[]string{"file1","file2","file3"}},
-			contentsTest{dirs:[]string{"file?"},result:[]string{"file1","file2","file3"}},
-			contentsTest{dirs:[]string{"*"},result:[]string{"file1","file2","file3"}},
+			contentsTest{dirs: []string{"file1", "file2", "file3"}, result: []string{"file1", "file2", "file3"}},
+			contentsTest{dirs: []string{"file?"}, result: []string{"file1", "file2", "file3"}},
+			contentsTest{dirs: []string{"*"}, result: []string{"file1", "file2", "file3"}},
 		},
 		[]contentsTest{
-			contentsTest{dirs:[]string{"dir1"},result:[]string{"dir1/file1","dir1/file2","dir1/file3"}},
-			contentsTest{dirs:[]string{"dir1/file1","dir1/file2","dir1/file3"},result:[]string{"dir1/file1","dir1/file2","dir1/file3"}},
-			contentsTest{dirs:[]string{"*"},result:[]string{"dir1/file1","dir1/file2","dir1/file3"}},
-			contentsTest{dirs:[]string{"*/*"},result:[]string{"dir1/file1","dir1/file2","dir1/file3"}},
+			contentsTest{dirs: []string{"dir1"}, result: []string{"dir1/file1", "dir1/file2", "dir1/file3"}},
+			contentsTest{dirs: []string{"dir1/file1", "dir1/file2", "dir1/file3"}, result: []string{"dir1/file1", "dir1/file2", "dir1/file3"}},
+			contentsTest{dirs: []string{"*"}, result: []string{"dir1/file1", "dir1/file2", "dir1/file3"}},
+			contentsTest{dirs: []string{"*/*"}, result: []string{"dir1/file1", "dir1/file2", "dir1/file3"}},
 		},
 		[]contentsTest{
-			contentsTest{dirs:[]string{"dir1"},result:[]string{"dir1/file1","dir1/subdir1/file1","dir1/subdir1/file2"}},
-			contentsTest{dirs:[]string{"dir2/*"},result:[]string{"dir2/subdir1/file1","dir2/subdir1/file2"}},
-			contentsTest{dirs:[]string{"dir2/subdir1"},result:[]string{"dir2/subdir1/file1","dir2/subdir1/file2"}},
-			contentsTest{dirs:[]string{"dir?"},result:[]string{"dir1/file1","dir1/subdir1/file1","dir1/subdir1/file2","dir2/subdir1/file1","dir2/subdir1/file2"}},
+			contentsTest{dirs: []string{"dir1"}, result: []string{"dir1/file1", "dir1/subdir1/file1", "dir1/subdir1/file2"}},
+			contentsTest{dirs: []string{"dir2/*"}, result: []string{"dir2/subdir1/file1", "dir2/subdir1/file2"}},
+			contentsTest{dirs: []string{"dir2/subdir1"}, result: []string{"dir2/subdir1/file1", "dir2/subdir1/file2"}},
+			contentsTest{dirs: []string{"dir?"}, result: []string{"dir1/file1", "dir1/subdir1/file1", "dir1/subdir1/file2", "dir2/subdir1/file1", "dir2/subdir1/file2"}},
 		},
 	}
 
@@ -248,17 +306,17 @@ func TestStepCreateFloppyDirectories(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		dir := filepath.Join(basePath, fmt.Sprintf("test-%d", i))
 
-		for _,test := range directories[i] {
+		for _, test := range directories[i] {
 			// create a new state and step
 			state := testStepCreateFloppyState(t)
 			step := new(StepCreateFloppy)
 
 			// modify step.Directories with ones from testcase
 			step.Directories = []string{}
-			for _,c := range test.dirs {
-				step.Directories = append(step.Directories, filepath.Join(dir,filepath.FromSlash(c)))
+			for _, c := range test.dirs {
+				step.Directories = append(step.Directories, filepath.Join(dir, filepath.FromSlash(c)))
 			}
-			log.Println(fmt.Sprintf("Trying against floppy_dirs : %v",step.Directories))
+			log.Println(fmt.Sprintf("Trying against floppy_dirs : %v", step.Directories))
 
 			// run the step
 			if action := step.Run(state); action != multistep.ActionContinue {
@@ -275,7 +333,7 @@ func TestStepCreateFloppyDirectories(t *testing.T) {
 			}
 
 			// check the FilesAdded array to see if it matches
-			for _,rpath := range test.result {
+			for _, rpath := range test.result {
 				fpath := filepath.Join(dir, filepath.FromSlash(rpath))
 				if !step.FilesAdded[fpath] {
 					t.Fatalf("unable to find file: %s for %v", fpath, step.Directories)
