@@ -4,7 +4,7 @@ init:
 	bundle
 
 docker-dev:
-	docker run -it --expose 4567 -P -v "$PWD":/usr/src/app -w /usr/src/app ruby:2.3.1 \
+	docker run -it --expose 4567 -P -v "$(PWD)":/usr/src/app -w /usr/src/app ruby:2.3.1 \
 	  bash -c "apt-get update && apt-get -qy install curl git libgmp3-dev nodejs && \
 	  gem install bundler && make dev"
 
@@ -13,6 +13,11 @@ dev: init
 
 build: init
 	PACKER_DISABLE_DOWNLOAD_FETCH=true PACKER_VERSION=1.0 bundle exec middleman build
+
+docker-format:
+	docker run -it -v "$(PWD)":/usr/src/app -w /usr/src/app ruby:2.3.1 \
+	  bash -c "apt-get update && apt-get -qy install curl git libgmp3-dev nodejs pandoc && \
+	  gem install bundler && bundle install && make format"
 
 format:
 	bundle exec htmlbeautifier -t 2 source/*.erb
