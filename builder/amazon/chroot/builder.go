@@ -30,20 +30,21 @@ type Config struct {
 	awscommon.AMIConfig       `mapstructure:",squash"`
 	awscommon.AccessConfig    `mapstructure:",squash"`
 
-	ChrootMounts      [][]string                 `mapstructure:"chroot_mounts"`
-	CommandWrapper    string                     `mapstructure:"command_wrapper"`
-	CopyFiles         []string                   `mapstructure:"copy_files"`
-	DevicePath        string                     `mapstructure:"device_path"`
-	FromScratch       bool                       `mapstructure:"from_scratch"`
-	MountOptions      []string                   `mapstructure:"mount_options"`
-	MountPartition    int                        `mapstructure:"mount_partition"`
-	MountPath         string                     `mapstructure:"mount_path"`
-	PostMountCommands []string                   `mapstructure:"post_mount_commands"`
-	PreMountCommands  []string                   `mapstructure:"pre_mount_commands"`
-	RootDeviceName    string                     `mapstructure:"root_device_name"`
-	RootVolumeSize    int64                      `mapstructure:"root_volume_size"`
-	SourceAmi         string                     `mapstructure:"source_ami"`
-	SourceAmiFilter   awscommon.AmiFilterOptions `mapstructure:"source_ami_filter"`
+	ChrootMounts          [][]string                 `mapstructure:"chroot_mounts"`
+	CommandWrapper        string                     `mapstructure:"command_wrapper"`
+	CopyFiles             []string                   `mapstructure:"copy_files"`
+	DevicePath            string                     `mapstructure:"device_path"`
+	FromScratch           bool                       `mapstructure:"from_scratch"`
+	MountOptions          []string                   `mapstructure:"mount_options"`
+	MountPartition        int                        `mapstructure:"mount_partition"`
+	MountPath             string                     `mapstructure:"mount_path"`
+	PostMountCommands     []string                   `mapstructure:"post_mount_commands"`
+	PreMountCommands      []string                   `mapstructure:"pre_mount_commands"`
+	PostProvisionCommands []string                   `mapstructure:"post_provision_commands"`
+	RootDeviceName        string                     `mapstructure:"root_device_name"`
+	RootVolumeSize        int64                      `mapstructure:"root_volume_size"`
+	SourceAmi             string                     `mapstructure:"source_ami"`
+	SourceAmiFilter       awscommon.AmiFilterOptions `mapstructure:"source_ami_filter"`
 
 	ctx interpolate.Context
 }
@@ -70,6 +71,7 @@ func (b *Builder) Prepare(raws ...interface{}) ([]string, error) {
 				"command_wrapper",
 				"post_mount_commands",
 				"pre_mount_commands",
+				"post_provision_commands",
 				"mount_path",
 			},
 		},
@@ -244,10 +246,15 @@ func (b *Builder) Run(ui packer.Ui, hook packer.Hook, cache packer.Cache) (packe
 		},
 		&StepPostMountCommands{
 			Commands: b.config.PostMountCommands,
+			"post-mount",
 		},
 		&StepMountExtra{},
 		&StepCopyFiles{},
 		&StepChrootProvision{},
+		&StepPostMountCommands{
+			Commands: b.config.PostProvisionCommands,
+			"post-provision",
+		},
 		&StepEarlyCleanup{},
 		&StepSnapshot{},
 		&awscommon.StepDeregisterAMI{

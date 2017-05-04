@@ -219,6 +219,10 @@ each category, the available configuration keys are alphabetized.
     mount and copy steps. The device and mount path are provided by
     `{{.Device}}` and `{{.MountPath}}`.
 
+- `post_provision_commands` (array of strings) - As `pre_mount_commands`, but the
+    commands are executed after the provision steps. The device and mount path
+    are provided by `{{.Device}}` and `{{.MountPath}}`.
+
 - `root_volume_size` (integer) - The size of the root volume in GB for the
     chroot environment and the resulting AMI. Default size is the snapshot size
     of the `source_ami` unless `from_scratch` is `true`, in which case

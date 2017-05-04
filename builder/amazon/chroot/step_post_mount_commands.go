@@ -14,6 +14,7 @@ type postMountCommandsData struct {
 // device, but prior to the bind mount and copy steps.
 type StepPostMountCommands struct {
 	Commands []string
+	Phase
 }
 
 func (s *StepPostMountCommands) Run(state multistep.StateBag) multistep.StepAction {
@@ -33,7 +34,7 @@ func (s *StepPostMountCommands) Run(state multistep.StateBag) multistep.StepActi
 		MountPath: mountPath,
 	}
 
-	ui.Say("Running post-mount commands...")
+	ui.Say(fmt.Sprintf("Running %s commands...", s.Phase))
 	if err := RunLocalCommands(s.Commands, wrappedCommand, ctx, ui); err != nil {
 		state.Put("error", err)
 		ui.Error(err.Error())
